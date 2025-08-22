@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager</title>
+    <style>
+        :root {
+            --primary-bg: #f4f7f9;
+            --container-bg: #ffffff;
+            --border-color: #e0e0e0;
+            --primary-text: #333;
+            --secondary-text: #666;
+            --accent-color: #007bff;
+            --accent-hover: #0056b3;
+            --danger-color: #dc3545;
+            --danger-hover: #c82333;
+            --success-color: #28a745;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: var(--primary-bg);
+            color: var(--primary-text);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .column {
+            flex: 1;
+            background-color: var(--container-bg);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+        h1, h2, h3 {
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input[type="text"], input[type="password"] {
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        button {
+            padding: 10px 15px; border: none; border-radius: 4px; color: white;
+            font-size: 1rem; cursor: pointer; transition: background-color 0.2s ease;
+        }
+        button.primary { background-color: var(--accent-color); }
+        button.primary:hover { background-color: var(--accent-hover); }
+        button.danger { background-color: var(--danger-color); }
+        button.danger:hover { background-color: var(--danger-hover); }
+        .item-list { list-style-type: none; padding: 0; max-height: 50vh; overflow-y: auto; }
+        .item-card {
+            background: #fafafa; border: 1px solid var(--border-color); border-radius: 6px;
+            padding: 15px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .item-card h4 { margin: 0 0 10px 0; font-size: 1.1rem; }
+        .item-card p { margin: 5px 0; color: var(--secondary-text); }
+        .item-card small { color: #999; font-family: monospace; }
+        .item-actions { margin-top: 15px; display: flex; gap: 10px; align-items: center; }
+        .item-actions input { flex-grow: 1; }
+        .item-actions button { flex-shrink: 0; }
+        #login-section { max-width: 400px; margin: 50px auto; text-align: center; }
+        #app-header {
+            max-width: 1200px; margin: 0 auto 20px auto; padding: 15px;
+            background-color: var(--container-bg); border-radius: 8px; box-shadow: var(--shadow);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .hidden { display: none; }
+        .admin-only { display: none; }
+        .admin-view .admin-only { display: flex; }
+        .admin-view form.admin-only { display: flex; flex-direction: column; }
+
+
+        #error-message { color: var(--danger-color); margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="login-section" class="column">
+    <h1>Task Manager Login</h1>
+    <form id="login-form">
+        <input type="text" id="login-username" placeholder="Username" required>
+        <input type="password" id="login-password" placeholder="Password" required>
+        <button type="submit" class="primary">Login</button>
+        <div id="login-error" class="error-message"></div>
+    </form>
+</div>
+
+<div id="main-content" class="hidden">
+    <div id="app-header">
+        <h1 id="dashboard-title">Dashboard</h1>
+        <div id="user-info"></div>
+    </div>
+    <div id="error-message"></div>
+
+    <div class="container">
+        <div class="column admin-only" id="user-management-column">
+            <h2>User Management</h2>
+            <form id="create-user-form">
+                <h3>Create New User</h3>
+                <input type="text" id="username" placeholder="Username" required>
+                <input type="password" id="password" placeholder="Password" required>
+                <button type="submit" class="primary">Create User</button>
+            </form>
+            <h3>Existing Users</h3>
+            <div id="user-list" class="item-list"></div>
+        </div>
+
+        <div class="column">
+            <h2 id="task-column-title">All Tasks</h2>
+            <form id="create-task-form" class="admin-only">
+                <h3>Create New Task</h3>
+                <input type="text" id="task-title" placeholder="Task Title" required>
+                <input type="text" id="task-description" placeholder="Task Description" required>
+                <button type="submit" class="primary">Create Task</button>
+            </form>
+            <div id="task-list" class="item-list"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const API_BASE_URL = 'http://localhost:8080/';
+        let authHeader = null;
+        let loggedInUser = null;
+
+        const loginSection = document.getElementById('login-section');
+        const loginErrorDiv = document.getElementById('login-error');
+        const mainContent = document.getElementById('main-content');
+        const loginForm = document.getElementById('login-form');
+        const dashboardTitle = document.getElementById('dashboard-title');
+        const taskColumnTitle = document.getElementById('task-column-title');
+        const userInfoDiv = document.getElementById('user-info');
+        const errorMessageDiv = document.getElementById('error-message');
+        const body = document.body;
+        const createUserForm = document.getElementById('create-user-form');
+        const createTaskForm = document.getElementById('create-task-form');
+        const userListDiv = document.getElementById('user-list');
+        const taskListDiv = document.getElementById('task-list');
+
+        async function apiFetch(endpoint, options = {}) {
+            clearError();
+            if (!authHeader) throw new Error("Authentication not set.");
+            const headers = { 'Authorization': authHeader, 'Content-Type': 'application/json', ...options.headers };
+            try {
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers });
+                if (!response.ok) {
+                    const errorData = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorData || response.statusText}`);
+                }
+                if (response.status === 204 || response.headers.get("content-length") === "0") return null;
+                return await response.json();
+            } catch (error) {
+                showError(error.message);
+                throw error;
+            }
+        }
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            loginErrorDiv.textContent = '';
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            authHeader = 'Basic ' + btoa(`${username}:${password}`);
+
+            try {
+                const userDetails = await apiFetch(`/user/${username}`);
+                loggedInUser = userDetails;
+                loginSection.classList.add('hidden');
+                mainContent.classList.remove('hidden');
+                setupUIForRole();
+            } catch (error) {
+                authHeader = null;
+                loginErrorDiv.textContent = 'Login failed. Please check username and password.';
+                console.error("Authentication failed:", error);
+            }
+        });
+
+        function setupUIForRole() {
+            const roles = loggedInUser.authorities.map(auth => auth.authority);
+            const isAdmin = roles.includes('ROLE_admin');
+
+            if (isAdmin) {
+                body.classList.add('admin-view');
+                dashboardTitle.textContent = 'Admin Dashboard';
+                taskColumnTitle.textContent = 'All Tasks';
+                userInfoDiv.innerHTML = `Logged in as: <strong>${loggedInUser.username}</strong> (Admin)`;
+                fetchAllAdminData();
+            } else {
+                body.classList.add('user-view');
+                dashboardTitle.textContent = 'My Dashboard';
+                taskColumnTitle.textContent = 'My Assigned Tasks';
+                userInfoDiv.innerHTML = `Logged in as: <strong>${loggedInUser.username}</strong> (User)`;
+                fetchAllTasks();
+            }
+        }
+
+        function fetchAllAdminData() {
+            fetchAllUsers();
+            fetchAllTasks();
+        }
+
+        async function fetchAllUsers() {
+            try {
+                const users = await apiFetch('/user/');
+                renderUsers(users);
+            } catch (e) { console.error("Failed to fetch users"); }
+        }
+
+        async function fetchAllTasks() {
+            try {
+                const tasks = await apiFetch('/task/');
+                renderTasks(tasks);
+            } catch (e) { console.error("Failed to fetch tasks"); }
+        }
+
+        function renderUsers(users) {
+            userListDiv.innerHTML = users.length ? '' : '<p>No other users found.</p>';
+            users.forEach(user => {
+                const userCard = document.createElement('div');
+                userCard.className = 'item-card';
+                userCard.innerHTML = `<h4>${user.username}</h4><div class="item-actions"><button class="danger" data-username="${user.username}">Delete User</button></div>`;
+                userListDiv.appendChild(userCard);
+            });
+        }
+
+        function renderTasks(tasks) {
+            taskListDiv.innerHTML = tasks.length ? '' : '<p>No tasks to display.</p>';
+            const roles = loggedInUser.authorities.map(a => a.authority);
+            const isAdmin = roles.includes('ROLE_admin');
+
+            tasks.forEach(task => {
+                const taskCard = document.createElement('div');
+                taskCard.className = 'item-card';
+                const assignedUsers = task.userAssigned && task.userAssigned.length > 0
+                    ? task.userAssigned.map(u => u.username).join(', ')
+                    : '<em>None</em>';
+
+                const assignFormHtml = isAdmin ? `<form class="item-actions assign-form admin-only" data-task-id="${task.id}"><input type="text" placeholder="Username to assign" required><button type="submit" class="primary">Assign</button></form>` : '';
+                const finishUserInput = isAdmin ? `<input type="text" placeholder="Username finishing task" required>` : `<input type="text" value="${loggedInUser.username}" readonly>`;
+
+                taskCard.innerHTML = `<h4>${task.title}</h4><p>${task.description}</p><p><strong>Assigned to:</strong> ${assignedUsers}</p><small>ID: ${task.id}</small>${assignFormHtml}<form class="item-actions finish-form" data-task-id="${task.id}">${finishUserInput}<button type="submit" class="danger">Finish Task</button></form>`;
+                taskListDiv.appendChild(taskCard);
+            });
+        }
+
+        createUserForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username');
+            const password = document.getElementById('password');
+            try {
+                await apiFetch('/user/', { method: 'POST', body: JSON.stringify({ username: username.value, password: password.value, role: 'user' }) });
+                username.value = ''; password.value = '';
+                fetchAllUsers();
+            } catch (e) { console.error("Failed to create user"); }
+        });
+
+        userListDiv.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('danger') && e.target.dataset.username) {
+                const username = e.target.dataset.username;
+                if (confirm(`Delete user: ${username}?`)) {
+                    try {
+                        await apiFetch(`/user/${username}`, { method: 'DELETE' });
+                        fetchAllUsers();
+                    } catch(e) { console.error("Failed to delete user"); }
+                }
+            }
+        });
+
+        createTaskForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const title = document.getElementById('task-title');
+            const description = document.getElementById('task-description');
+            try {
+                await apiFetch('/task/', { method: 'POST', body: JSON.stringify({ title: title.value, description: description.value }) });
+                title.value = ''; description.value = '';
+                fetchAllTasks();
+            } catch (e) { console.error("Failed to create task"); }
+        });
+
+        taskListDiv.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const taskId = form.dataset.taskId;
+            const username = form.querySelector('input[type="text"]').value;
+
+            try {
+                if (form.classList.contains('assign-form')) {
+                    await apiFetch(`/task/${taskId}/${username}`, { method: 'POST' });
+                } else if (form.classList.contains('finish-form')) {
+                    await apiFetch(`/task/${taskId}/${username}`, { method: 'DELETE' });
+                }
+                fetchAllTasks();
+            } catch (e) { console.error("Failed to perform task action."); }
+        });
+
+        function showError(message) { errorMessageDiv.textContent = `Error: ${message}`; }
+        function clearError() { errorMessageDiv.textContent = ''; }
+    });
+</script>
+</body>
+</html>
